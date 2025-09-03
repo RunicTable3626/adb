@@ -8,17 +8,19 @@ import { useMemo } from 'react'
 import { Table } from '@/components/ui/table'
 import toast from 'react-hot-toast'
 
-export function ActivistNames() {
+export function IntlChapterNames() {
   // This useQuery could just as well happen in some deeper
   // child to <Activists>, data will be available immediately either way
   const { data, isLoading } = useQuery({
-    queryKey: [API_PATH.ACTIVIST_NAMES_GET],
-    queryFn: apiClient.getActivistNames,
+    queryKey: [API_PATH.CHAPTER_LIST],
+    queryFn: apiClient.getChapterList,
   })
 
-  const sampledActivists = useMemo(() => {
-    return (data?.activist_names ?? []).slice(0, 5)
-  }, [data?.activist_names])
+  const chapterNames = useMemo(() => {
+    return (data ?? []).map((ch) => ch.Name)
+  }, [data])
+
+  console.log(chapterNames)
 
   return (
     <div>
@@ -27,7 +29,7 @@ export function ActivistNames() {
         {isLoading ? (
           <Loader className="animate-spin" />
         ) : (
-          sampledActivists.map((name) => <li key={name}>{name}</li>)
+          chapterNames.map((Name) => <li key={Name}>{Name}</li>)
         )}
       </ul>
     </div>
@@ -35,7 +37,7 @@ export function ActivistNames() {
 }
 
 /** Example component of how to fetch data using Tanstack Query. */
-export default function Activists() {
+export default function InternationalChapters() {
   // TODO: add example of loading data from child relationships
   //   // This query was not prefetched on the server and will not start
   //   // fetching until on the client, both patterns are fine to mix.
@@ -47,7 +49,7 @@ export default function Activists() {
   return (
     <>
       <Table />
-      <ActivistNames />
+      <IntlChapterNames />
       <Button onClick={() => toast.success('Hey!')}>Click me</Button>
     </>
   )
