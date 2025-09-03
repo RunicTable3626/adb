@@ -84,7 +84,6 @@ func augmentUserWithChapterFromSession(db *sqlx.DB, r *http.Request, adbUser mod
 
 	chapterID, ok := authSession.Values["chapterid"].(int)
 	if !ok {
-		// User could have old session cookie that doesn't contain `chapterid`.
 		return adbUser, fmt.Errorf("failed to get chapter ID from session")
 	}
 
@@ -98,18 +97,25 @@ func augmentUserWithChapterFromSession(db *sqlx.DB, r *http.Request, adbUser mod
 	return adbUser, nil
 }
 
-func getAuthedADBUser(db *sqlx.DB, r *http.Request) (adbUser model.ADBUser, authed bool) {
-	if !config.IsProd {
-		augmentedUser, err := augmentUserWithChapterFromSession(db, r, model.DevTestUser)
-		if err != nil {
-			// It's fine if this fails in local dev, b/c we often don't actually have a session cookie.
-			log.Println("Warning: Failed to augment dev user with chapter from session:", err)
+func authADBUser(db *sqlx.DB, r *http.Request, w http.ResponseWriter) (adbUser model.ADBUser, authed bool) {
+	adbUser, authed = getAuthedADBUser(db, r)
+
+	if !authed && !config.IsProd {
+		testUser, testUserErr := model.GetADBUser(db, model.DevTestUserId, "")
+		if testUserErr != nil {
+			panic(fmt.Errorf("error getting test user: %v", testUserErr))
 		}
-		return augmentedUser, true
+
+		setAuthSession(w, r, testUser)
+		adbUser, authed = getAuthedADBUser(db, r)
 	}
 
+	return adbUser, authed
+}
+
+func getAuthedADBUser(db *sqlx.DB, r *http.Request) (adbUser model.ADBUser, authed bool) {
 	// First, check the cookie.
-	authSession, err := sessionStore.New(r, "auth-session")
+	authSession, err := sessionStore.Get(r, "auth-session")
 	if err != nil {
 		// the cookie secret has changed
 		return model.ADBUser{}, false
@@ -149,7 +155,9 @@ func setAuthSession(w http.ResponseWriter, r *http.Request, adbUser model.ADBUse
 
 	authSession, err := sessionStore.Get(r, "auth-session")
 	if err != nil {
-		return err
+		// This err represents an issue with decoding an existing session.
+		// sessionStore.Get returns a new session in this case, so no need to return.
+		log.Printf("Warning: creating a new session because the existing session could not be decoded: %v", err)
 	}
 	authSession.Options = &sessions.Options{
 		Path: "/",
@@ -240,6 +248,7 @@ func router() (*mux.Router, *sqlx.DB) {
 	router.Handle("/list_connections", alice.New(main.authOrganizerMiddleware).ThenFunc(main.ListConnectionsHandler))
 	router.Handle("/list_activists", alice.New(main.authOrganizerOrNonSFBayMiddleware).ThenFunc(main.ListActivistsHandler))
 	router.Handle("/new_activists", alice.New(main.authOrganizerOrNonSFBayMiddleware).ThenFunc(main.NewActivistsHandler))
+	router.Handle("/new_activists_pending_workshop", alice.New(main.authOrganizerMiddleware).ThenFunc(main.NewActivistsPendingWorkshopHandler))
 	router.Handle("/community_prospects", alice.New(main.authOrganizerMiddleware).ThenFunc(main.ListCommunityProspectsHandler))
 	router.Handle("/community_prospects_followup", alice.New(main.authOrganizerMiddleware).ThenFunc(main.ListCommunityProspectsFollowupHandler))
 	router.Handle("/activist_development", alice.New(main.authOrganizerMiddleware).ThenFunc(main.ListActivistsDevelopmentHandler))
@@ -303,6 +312,7 @@ func router() (*mux.Router, *sqlx.DB) {
 	router.Handle("/csv/event_attendance/{event_id:[0-9]+}", alice.New(main.apiOrganizerOrNonSFBayAuthMiddleware).ThenFunc(main.EventAttendanceCSVHandler))
 	router.Handle("/csv/all_activists_spoke", alice.New(main.apiOrganizerOrNonSFBayAuthMiddleware).ThenFunc(main.SupporterSpokeCSVHandler))
 	router.Handle("/csv/new_activists_spoke", alice.New(main.apiOrganizerOrNonSFBayAuthMiddleware).ThenFunc(main.NewActivistsSpokeCSVHandler))
+	router.Handle("/csv/new_activists_pending_workshop_spoke", alice.New(main.apiOrganizerAuthMiddleware).ThenFunc(main.NewActivistsPendingWorkshopSpokeCSVHandler))
 	router.Handle("/user/list", alice.New(main.apiOrganizerAuthMiddleware).ThenFunc(main.UserListHandler))
 	router.Handle("/user/me", alice.New(main.apiAttendanceAuthMiddleware).ThenFunc(main.AuthedUserInfoHandler))
 
@@ -362,7 +372,7 @@ type MainController struct {
 
 func (c MainController) authRoleMiddleware(h http.Handler, allowedRoles []string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		user, authed := getAuthedADBUser(c.db, r)
+		user, authed := authADBUser(c.db, r, w)
 		if !authed {
 			// Delete the cookie if it doesn't auth.
 			c := &http.Cookie{
@@ -447,7 +457,7 @@ func getUserMainRole(user model.ADBUser) string {
 
 func (c MainController) apiRoleMiddleware(h http.Handler, allowedRoles []string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		user, authed := getAuthedADBUser(c.db, r)
+		user, authed := authADBUser(c.db, r, w)
 
 		if !authed {
 			http.Error(w, http.StatusText(400), 400)
@@ -622,6 +632,17 @@ func (c MainController) NewActivistsHandler(w http.ResponseWriter, r *http.Reque
 			Title:       "New Activists",
 			Description: "Everyone who has attended 3 or fewer events in total, with their most recent event within the given range (last 6 months by default)",
 			View:        "new_activists",
+		},
+	})
+}
+
+func (c MainController) NewActivistsPendingWorkshopHandler(w http.ResponseWriter, r *http.Request) {
+	renderPage(w, r, "activist_list", PageData{
+		PageName: "NewActivistsPendingWorkshopList",
+		Data: ActivistListData{
+			Title:       "New Activists Pending Workshop",
+			Description: "Supporters whose first event was within the given range (last 6 months by default) AND have not yet attended the Intro Workshop.",
+			View:        "new_activists_pending_workshop",
 		},
 	})
 }
@@ -817,10 +838,12 @@ func (c MainController) SwitchActiveChapterHandler(w http.ResponseWriter, r *htt
 
 func (c MainController) DevTestingProcessInterestForms(w http.ResponseWriter, r *http.Request) {
 	form_processor.ProcessInterestForms(c.db)
+	w.WriteHeader(http.StatusOK)
 }
 
 func (c MainController) DevTestingProcessApplicationForms(w http.ResponseWriter, r *http.Request) {
 	form_processor.ProcessApplicationForms(c.db)
+	w.WriteHeader(http.StatusOK)
 }
 
 func (c MainController) DevTestingProcessIntlAppForms(w http.ResponseWriter, r *http.Request) {
@@ -1523,6 +1546,38 @@ func (c MainController) NewActivistsSpokeCSVHandler(w http.ResponseWriter, r *ht
 	}
 	for _, activist := range activists {
 		err := writer.Write([]string{activist.FirstName, activist.LastName, activist.Cell, activist.LastEvent})
+		if err != nil {
+			sendErrorMessage(w, err)
+			return
+		}
+	}
+	writer.Flush()
+}
+
+func (c MainController) NewActivistsPendingWorkshopSpokeCSVHandler(w http.ResponseWriter, r *http.Request) {
+	chapter := getAuthedADBChapter(c.db, r)
+
+	startDate := r.URL.Query().Get("start_date")
+	endDate := r.URL.Query().Get("end_date")
+
+	activists, err := model.GetNewActivistsPendingWorkshopSpokeInfo(c.db, chapter, startDate, endDate)
+	if err != nil {
+		sendErrorMessage(w, err)
+		return
+	}
+
+	w.Header().Set("Content-Disposition", "attachment; filename=new_activists_pending_workshop_spoke.csv")
+	w.Header().Set("Content-Type", "text/csv")
+	w.Header().Set("Transfer-Encoding", "chunked")
+
+	writer := csv.NewWriter(w)
+	err = writer.Write([]string{"first_name", "last_name", "cell", "first_event"})
+	if err != nil {
+		sendErrorMessage(w, err)
+		return
+	}
+	for _, activist := range activists {
+		err := writer.Write([]string{activist.FirstName, activist.LastName, activist.Cell, activist.FirstEvent})
 		if err != nil {
 			sendErrorMessage(w, err)
 			return
