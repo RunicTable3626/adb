@@ -4,8 +4,15 @@ import { useQuery } from '@tanstack/react-query'
 import { Button } from '@/components/ui/button'
 import { API_PATH, apiClient } from '@/lib/api'
 import { Loader } from 'lucide-react'
+import {
+  Table,
+  TableHeader,
+  TableBody,
+  TableRow,
+  TableHead,
+  TableCell,
+} from '@/components/ui/table'
 import { useMemo } from 'react'
-import { Table } from '@/components/ui/table'
 import toast from 'react-hot-toast'
 
 export function IntlChapterNames() {
@@ -16,23 +23,38 @@ export function IntlChapterNames() {
     queryFn: apiClient.getChapterList,
   })
 
-  const chapterNames = useMemo(() => {
-    return (data ?? []).map((ch) => ch.Name)
+  const chaptersData = useMemo(() => {
+    return data ?? []
   }, [data])
 
-  console.log(chapterNames)
+  console.log(chaptersData)
 
   return (
-    <div>
-      <p className="font-bold">Here are some activists:</p>
-      <ul className="list-disc pl-4">
-        {isLoading ? (
+    <>
+      {isLoading ? (
+        <div className="flex justify-center p-4">
           <Loader className="animate-spin" />
-        ) : (
-          chapterNames.map((Name) => <li key={Name}>{Name}</li>)
-        )}
-      </ul>
-    </div>
+        </div>
+      ) : (
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Chapter ID</TableHead>
+              <TableHead>Name</TableHead>
+            </TableRow>
+          </TableHeader>
+
+          <TableBody>
+            {chaptersData.map((person, idx) => (
+              <TableRow key={idx}>
+                <TableCell>{person.ChapterID}</TableCell>
+                <TableCell>{person.Name}</TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      )}
+    </>
   )
 }
 

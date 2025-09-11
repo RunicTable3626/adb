@@ -11,14 +11,7 @@ import { AuthedPageLayout } from '@/app/authed-page-layout'
 import { API_PATH, ApiClient } from '@/lib/api'
 import { getCookies } from '@/lib/auth'
 import { Navbar } from '@/components/nav'
-import {
-  Table,
-  TableHeader,
-  TableBody,
-  TableRow,
-  TableHead,
-  TableCell,
-} from '@/components/ui/table'
+
 import InternationalChapters from './international-chapters'
 
 export default async function IntlOrgPage() {
@@ -33,25 +26,6 @@ export default async function IntlOrgPage() {
   return (
     <AuthedPageLayout pageName="TestPage">
       <Navbar />
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Name</TableHead>
-            <TableHead>Role</TableHead>
-          </TableRow>
-        </TableHeader>
-
-        <TableBody>
-          <TableRow>
-            <TableCell>Jane Doe</TableCell>
-            <TableCell>Activist</TableCell>
-          </TableRow>
-          <TableRow>
-            <TableCell>John Smith</TableCell>
-            <TableCell>Organizer</TableCell>
-          </TableRow>
-        </TableBody>
-      </Table>
       <ContentWrapper size="sm" className="gap-6">
         <p>Hello from App Router!</p>
 

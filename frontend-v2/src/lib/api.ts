@@ -30,6 +30,7 @@ const AuthedUserResp = z.object({
   mainRole: Role,
 })
 
+//modify this to get all the required fields.
 const ChapterListResp = z.object({
   chapters: z.array(
     z.object({
