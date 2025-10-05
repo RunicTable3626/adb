@@ -6,6 +6,7 @@ export const API_PATH = {
   ACTIVIST_NAMES_GET: 'activist_names/get',
   USER_ME: 'user/me',
   CHAPTER_LIST: 'chapter/list',
+  WORKING_GROUPS_LIST: '/working_group/list',
 }
 
 export const StaticResourcesHashResp = z.object({
@@ -38,6 +39,27 @@ const ChapterListResp = z.object({
     }),
   ),
 })
+
+const WorkingGroupMemberResp = z.object({
+  Name: z.string(),
+  Email: z.string().email(),
+  PointPerson: z.boolean(),
+  NonMemberOnMailingList: z.boolean(),
+})
+
+const WorkingGroupResp = z.object({
+  ID: z.string(),
+  Name: z.string(),
+  Email: z.string().email(),
+  Members: z.array(WorkingGroupMemberResp),
+  Visible: z.boolean(),
+  Description: z.string(),
+  MeetingTime: z.string(),
+  MeetingLocation: z.string(),
+  Coords: z.string(),
+})
+
+export const WorkingGroupListResp = z.array(WorkingGroupResp)
 
 export const ActivistNamesResp = z.object({
   activist_names: z.array(z.string()),
@@ -86,6 +108,11 @@ export class ApiClient {
   getChapterList = async () => {
     const resp = await this.client.get(API_PATH.CHAPTER_LIST).json()
     return ChapterListResp.parse(resp).chapters
+  }
+
+  getWorkingGroups = async () => {
+    const resp = await this.client.get(API_PATH.WORKING_GROUPS_LIST).json()
+    return WorkingGroupListResp.parse(resp)
   }
 }
 

@@ -47,6 +47,11 @@
           "label": "Working Groups",
           "href": "/list_working_groups",
           "page": "WorkingGroupList"
+        },
+        {
+          "label": "Working Groups V2",
+          "href": "/v2/working-groups",
+          "page": "WorkingGroupListV2"
         }
       ]
     },
